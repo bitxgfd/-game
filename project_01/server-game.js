@@ -392,7 +392,7 @@ function selectMewTarget(room, actorSeat, targetPlayer, broadcast) {
     const outgoing = state.pendingMew.outgoingCard;
     const discarded = target.cards[position];
     if (discarded) state.discardPile.push({ ...discarded, faceUp: true });
-    target.cards[position] = { ...outgoing };
+    target.cards[position] = { ...outgoing, faceUp: true };
     state.drawnCard = null;
     state.drawnSource = null;
     state.pendingMew = null;
@@ -458,8 +458,8 @@ function executeRocket(state, playerIndex, position) {
     const refillIndex = (playerIndex + offset) % state.players.length;
     const refill = drawRefillCard(state, protectedIds);
     state.players[refillIndex].cards[position] = refill
-      ? { ...refill, faceUp: false }
-      : cloneCard(CARD_DEFS[0]);
+      ? { ...refill, faceUp: true }
+      : { ...cloneCard(CARD_DEFS[0]), faceUp: true };
   }
   addLog(state, `${state.players[playerIndex].name}掷出正面，所有玩家弃掉第 ${position + 1} 个卡位并从该玩家开始补牌，弃牌置底。`, "accent");
 }

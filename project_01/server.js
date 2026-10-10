@@ -13,6 +13,7 @@ const ROOT = __dirname;
 const MAX_PLAYERS = 4;
 const rooms = new Map();
 const clients = new Map();
+const HEARTBEAT_INTERVAL_MS = 25_000;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -294,10 +295,14 @@ server.on("upgrade", (request, socket, head) => {
 
 wss.on("connection", (ws) => {
   const client = { id: makeId(), name: "玩家", roomCode: null, ws };
+  ws.isAlive = true;
   clients.set(client.id, client);
   send(client, { type: "hello", playerId: client.id, maxPlayers: MAX_PLAYERS });
 
   ws.on("message", (data) => handleMessage(client, data.toString()));
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
   ws.on("close", () => {
     leaveRoom(client);
     clients.delete(client.id);
@@ -307,6 +312,18 @@ wss.on("connection", (ws) => {
     clients.delete(client.id);
   });
 });
+
+const heartbeatTimer = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, HEARTBEAT_INTERVAL_MS);
+heartbeatTimer.unref();
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "localhost" : HOST;

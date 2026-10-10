@@ -395,8 +395,9 @@ async function resolveRocket(token) {
 
 async function selectPlayerCard(index) {
   if (onlineMode) {
-    if (state.busy || state.roundLocked || state.currentPlayer !== 0) return;
-    if (state.phase === "ditto-choice") {
+    const isDittoChoice = state.phase === "ditto-choice";
+    if (state.busy || (!isDittoChoice && state.roundLocked) || state.currentPlayer !== 0) return;
+    if (isDittoChoice) {
       sendOnlineAction("select_ditto", { index });
     } else {
       sendOnlineAction("select_card", { index });
@@ -563,7 +564,7 @@ async function resolveMew(token) {
   const position = state.pendingMew.ownIndex;
   const ownCard = state.pendingMew.outgoingCard;
   const targetCard = state.players[targetPlayer].cards[position];
-  state.players[targetPlayer].cards[position] = { ...ownCard, faceUp: ownCard.faceUp };
+  state.players[targetPlayer].cards[position] = { ...ownCard, faceUp: true };
   state.discardPile.push({ ...targetCard, faceUp: true });
   state.drawnSource = null;
   state.pendingMew = null;
@@ -584,7 +585,9 @@ async function resolveRocketHeads(position, token) {
   for (let offset = 0; offset < state.playerCount; offset += 1) {
     const playerIndex = (offset + 0) % state.playerCount;
     const refill = drawRefillCard(protectedIds);
-    state.players[playerIndex].cards[position] = refill ? { ...refill, faceUp: false } : cloneCard(CARD_DEFS[0]);
+    state.players[playerIndex].cards[position] = refill
+      ? { ...refill, faceUp: true }
+      : { ...cloneCard(CARD_DEFS[0]), faceUp: true };
   }
   addLog(`火箭队正面：所有玩家弃掉第 ${position + 1} 个卡位并从你开始补牌，弃牌置于牌堆底部。`, "accent");
   renderAll();
@@ -674,7 +677,9 @@ function executeRocketFor(playerIndex, position, rocket) {
   for (let offset = 0; offset < state.playerCount; offset += 1) {
     const refillIndex = (playerIndex + offset) % state.playerCount;
     const refill = drawRefillCard(protectedIds);
-    state.players[refillIndex].cards[position] = refill ? { ...refill, faceUp: false } : cloneCard(CARD_DEFS[0]);
+    state.players[refillIndex].cards[position] = refill
+      ? { ...refill, faceUp: true }
+      : { ...cloneCard(CARD_DEFS[0]), faceUp: true };
   }
   addLog(`${state.players[playerIndex].name}掷出正面，所有玩家弃掉同一位置的牌并从该玩家开始补牌，弃牌置底。`);
 }
@@ -733,13 +738,12 @@ async function aiTakeTurn(playerIndex, token) {
   if (card.type === "梦幻") {
     const otherPlayers = state.players.map((_, index) => index).filter((index) => index !== playerIndex);
     const targetPlayer = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-    const targetCardIndex = Math.floor(Math.random() * 6);
-    const targetCard = state.players[targetPlayer].cards[targetCardIndex];
     const outgoing = player.cards[targetIndex];
-    state.players[targetPlayer].cards[targetCardIndex] = { ...card, faceUp: true };
-    player.cards[targetIndex] = { ...targetCard, faceUp: outgoing.faceUp };
-    state.discardPile.push({ ...outgoing, faceUp: true });
-    addLog(`${player.name}用梦幻交换了两名玩家的卡牌。`);
+    const targetCard = state.players[targetPlayer].cards[targetIndex];
+    player.cards[targetIndex] = { ...card, faceUp: true };
+    state.players[targetPlayer].cards[targetIndex] = { ...outgoing, faceUp: true };
+    state.discardPile.push({ ...targetCard, faceUp: true });
+    addLog(`${player.name}用梦幻替换自己的第 ${targetIndex + 1} 个位置，并将换下来的牌交给${state.players[targetPlayer].name}，对方原牌已弃掉。`);
     renderAll();
     await wait(STEP_DELAY);
     return;
@@ -925,26 +929,31 @@ function renderScores() {
 
 function renderOpponents() {
   elements.opponentsRow.innerHTML = state.players.slice(1).map((player, index) => `
-    <div class="opponent ${state.currentPlayer === index + 1 ? "current" : ""}">
+    <div class="opponent ${state.currentPlayer === index + 1 ? "current" : ""} ${
+      !state.busy && state.phase === "mew-target" && state.pendingMew && player.seat !== onlineLocalSeat
+        ? "targetable"
+        : ""
+    }">
       <div class="opponent-head">
         <span class="avatar ${avatarClasses[index + 1]}">${player.name.slice(0, 1)}</span>
         <span class="opponent-name">${player.name}</span>
         <span class="opponent-score">${player.score === null ? "暗牌中" : `${player.score} 分`}</span>
       </div>
+      ${
+        !state.busy && state.phase === "mew-target" && state.pendingMew && player.seat !== onlineLocalSeat
+          ? `<button class="opponent-target-button" type="button" data-opponent-target="${index + 1}">选择 ${player.name}</button>`
+          : ""
+      }
       <div class="mini-grid">${player.cards.map((card, cardIndex) => {
-        const targetable = !state.busy
-          && state.phase === "mew-target"
-          && Boolean(state.pendingMew)
-          && player.seat !== onlineLocalSeat;
         const shown = card.faceUp || state.roundLocked;
         const content = shown ? (card.type === "百变怪" && card.dittoTargetIndex == null ? "?" : card.value) : "";
-        return `<button class="mini-card ${shown ? "face-up" : ""} ${targetable ? "targetable" : ""}" ${targetable ? `data-opponent-index="${index + 1}" data-opponent-card-index="${cardIndex}"` : "disabled"} style="${shown ? `--mini-card-bg:${card.color}` : ""}">${content}</button>`;
+        return `<button class="mini-card ${shown ? "face-up" : ""}" disabled style="${shown ? `--mini-card-bg:${card.color}` : ""}">${content}</button>`;
       }).join("")}</div>
     </div>
   `).join("");
   elements.opponentsRow.style.gridTemplateColumns = `repeat(${Math.max(1, state.players.length - 1)}, minmax(0, 1fr))`;
-  elements.opponentsRow.querySelectorAll("[data-opponent-index]").forEach((button) => {
-    button.addEventListener("click", () => selectOpponentCard(Number(button.dataset.opponentIndex), Number(button.dataset.opponentCardIndex)));
+  elements.opponentsRow.querySelectorAll("[data-opponent-target]").forEach((button) => {
+    button.addEventListener("click", () => selectOpponentCard(Number(button.dataset.opponentTarget), null));
   });
 }
 
@@ -964,8 +973,9 @@ function renderPlayer() {
       dittoTargetable ||
       (state.phase === "charizard-peek" && !card.faceUp)
     );
+    const mewSelected = state.phase === "mew-target" && state.pendingMew?.ownIndex === index;
     return `
-      <button class="game-card ${selectable ? "selectable" : ""}" data-card-index="${index}" aria-label="第 ${index + 1} 个卡位" ${selectable ? "" : "disabled"}>
+      <button class="game-card ${selectable ? "selectable" : ""} ${mewSelected ? "mew-selected" : ""}" data-card-index="${index}" aria-label="第 ${index + 1} 个卡位" ${selectable ? "" : "disabled"}>
         ${card.faceUp || state.roundLocked ? renderFaceUpCard(card, player.cards, index) : '<div class="card-back"></div>'}
       </button>
     `;
