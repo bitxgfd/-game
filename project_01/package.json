@@ -1,0 +1,16 @@
+{
+  "name": "paper-safari-online",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paper Safari local web game and online room server",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
