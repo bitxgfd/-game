@@ -71,12 +71,22 @@ node_modules/
    ```text
    Name: paper-safari-online
    Branch: main
-   Root Directory: 留空
    Runtime: Node
    Build Command: npm ci
    Start Command: npm start
    Instance Type: Free
    Health Check Path: /health
+   ```
+
+   `Root Directory` 要根据 GitHub 仓库里的文件位置填写：
+
+   - 如果 `package.json`、`package-lock.json`、`server.js` 直接位于仓库最外层，`Root Directory` 留空。
+   - 如果这些文件位于 `project_01` 文件夹内，填写 `project_01`。
+
+   你的仓库如果是通过上传整个项目文件夹建立的，通常属于第二种情况。此时 Render 的配置应为：
+
+   ```text
+   Root Directory: project_01
    ```
 
 4. 点击 **Create Web Service**。

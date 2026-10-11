@@ -54,10 +54,13 @@ const elements = {
   playerGrid: document.querySelector("#playerGrid"),
   drawnCard: document.querySelector("#drawnCard"),
   discardPreview: document.querySelector("#discardPreview"),
+  discardTopName: document.querySelector("#discardTopName"),
+  discardDeckButton: document.querySelector("#discardDeckButton"),
   drawDeckCount: document.querySelector("#drawDeckCount"),
   discardDeckCount: document.querySelector("#discardDeckCount"),
   deckCount: document.querySelector("#deckCount"),
   statusText: document.querySelector("#statusText"),
+  turnOwner: document.querySelector("#turnOwner"),
   playerScore: document.querySelector("#playerScore"),
   playerHint: document.querySelector("#playerHint"),
   logList: document.querySelector("#logList"),
@@ -833,6 +836,8 @@ function finalizeRound() {
   const winners = state.players.filter((player) => player.score === lowest);
   winners.forEach((player) => { player.badges += 1; });
   state.roundStarter = state.players.indexOf(winners[0]);
+  state.phase = "round-end";
+  state.busy = false;
   renderAll();
   const winnerNames = winners.map((player) => player.name).join("、");
   const gameWinners = winners.filter((player) => player.badges >= TARGET_BADGES);
@@ -864,10 +869,53 @@ function continueGame() {
 function updateStatus() {
   const active = state.players[state.currentPlayer];
   const isHuman = state.currentPlayer === 0;
+  const activeName = active?.name || "对手";
+  const roundEnded = state.phase === "round-end";
+  const canAct = isHuman
+    && !state.busy
+    && (!state.roundLocked || state.phase === "ditto-choice");
+  const isProcessing = !roundEnded && isHuman && !canAct;
   elements.roundLabel.textContent = state.round;
-  elements.turnChip.textContent = isHuman ? "你的回合" : `${active?.name || "对手"}行动中`;
-  if (state.phase === "rocket-flip") {
-    elements.statusText.textContent = state.coinAnimating ? "火箭队：硬币投掷中…" : "火箭队：请查看硬币结果";
+  elements.turnChip.textContent = roundEnded
+    ? "本轮结算"
+    : isHuman
+      ? canAct ? "你的回合" : "正在处理"
+      : `${activeName}的回合`;
+  elements.turnOwner.textContent = roundEnded
+    ? "本轮结算"
+    : canAct
+      ? "轮到你"
+      : isProcessing
+        ? "处理中"
+        : activeName;
+  elements.turnOwner.classList.toggle("is-actionable", canAct);
+  elements.turnOwner.classList.toggle("is-opponent", !roundEnded && !isHuman);
+  elements.turnOwner.classList.toggle("is-processing", isProcessing);
+  elements.turnOwner.classList.toggle("is-ended", roundEnded);
+  elements.turnChip.classList.toggle("is-yours", canAct);
+  elements.turnChip.classList.toggle("is-opponent", !roundEnded && !isHuman);
+  elements.turnChip.classList.toggle("is-processing", isProcessing);
+  elements.turnChip.classList.toggle("is-ended", roundEnded);
+  if (roundEnded) {
+    elements.statusText.textContent = "本轮已结算，等待房主开始下一轮";
+  } else if (state.busy) {
+    if (state.phase === "rocket-flip") {
+      elements.statusText.textContent = state.coinAnimating ? "火箭队：硬币投掷中…" : "火箭队：正在结算结果…";
+    } else if (state.phase === "charizard-peek") {
+      elements.statusText.textContent = "喷火龙：正在查看卡牌…";
+    } else if (state.phase === "mew-own" || state.phase === "mew-target") {
+      elements.statusText.textContent = "梦幻：正在处理换牌…";
+    } else if (state.phase === "ditto-choice") {
+      elements.statusText.textContent = "百变怪：正在确认选择…";
+    } else if (state.phase === "snorlax-first" || state.phase === "snorlax-second") {
+      elements.statusText.textContent = "卡比兽：正在交换卡牌…";
+    } else if (state.phase === "rocket-choose") {
+      elements.statusText.textContent = "火箭队：正在更换全桌卡牌…";
+    } else {
+      elements.statusText.textContent = "正在处理卡牌，请稍候…";
+    }
+  } else if (state.phase === "rocket-flip") {
+    elements.statusText.textContent = state.coinAnimating ? "火箭队：硬币投掷中…" : "火箭队：查看硬币结果";
   } else if (state.phase === "draw") {
     elements.statusText.textContent = isHuman ? "请选择摸牌堆或弃牌堆" : `${active?.name || "对手"}正在思考`;
   } else if (state.phase === "resolve") {
@@ -888,8 +936,6 @@ function updateStatus() {
     elements.statusText.textContent = "火箭队：选择全桌一起更换的位置";
   } else if (state.phase === "ditto-choice") {
     elements.statusText.textContent = "百变怪：选择它要复制的相邻卡牌";
-  } else if (state.phase === "round-end") {
-    elements.statusText.textContent = "本轮已结算，等待房主开始下一轮";
   } else {
     elements.statusText.textContent = "对手行动中";
   }
@@ -922,6 +968,9 @@ function renderScores() {
     <div class="score-row ${index === state.currentPlayer ? "active" : ""}">
       <span class="avatar ${avatarClasses[index]}">${index === 0 ? "P" : player.name.slice(0, 1)}</span>
       <span class="player-mini">${player.name}</span>
+      ${index === state.currentPlayer && state.phase !== "round-end"
+        ? `<span class="score-turn">${state.busy ? "处理中" : "行动中"}</span>`
+        : ""}
       <span class="badges">${Array.from({ length: TARGET_BADGES }, (_, badgeIndex) => `<i class="badge-dot ${badgeIndex < player.badges ? "filled" : ""}"></i>`).join("")}</span>
     </div>
   `).join("");
@@ -937,6 +986,9 @@ function renderOpponents() {
       <div class="opponent-head">
         <span class="avatar ${avatarClasses[index + 1]}">${player.name.slice(0, 1)}</span>
         <span class="opponent-name">${player.name}</span>
+        ${state.currentPlayer === index + 1
+          ? `<span class="opponent-turn-label">${state.busy ? "处理中" : "行动中"}</span>`
+          : ""}
         <span class="opponent-score">${player.score === null ? "暗牌中" : `${player.score} 分`}</span>
       </div>
       ${
@@ -1038,7 +1090,21 @@ function renderDecks() {
       <i>${discardTop.icon}</i>
     </span>
   ` : "";
-  elements.discardPreview.title = discardTop ? `弃牌堆顶：${discardTop.name}，${discardTop.type === "百变怪" ? "数值待结算" : `${discardTop.value}分`}` : "弃牌堆为空";
+  const discardName = discardTop
+    ? discardTop.type === "普通" ? `${discardTop.value}分` : discardTop.name
+    : "暂无牌";
+  const discardDescription = discardTop
+    ? `弃牌堆顶：${discardTop.name}，${discardTop.type === "百变怪" ? "数值待结算" : `${discardTop.value}分`}`
+    : "弃牌堆为空";
+  elements.discardTopName.textContent = discardName;
+  elements.discardPreview.title = discardDescription;
+  elements.discardDeckButton.title = discardDescription;
+  elements.discardDeckButton.setAttribute(
+    "aria-label",
+    discardTop
+      ? `拿弃牌堆顶牌，${discardTop.name}${discardTop.type === "普通" ? `${discardTop.value}分` : `，${discardTop.type}能力牌`}`
+      : "弃牌堆为空",
+  );
 
   if (state.drawnCard) {
     elements.drawnCard.classList.add("has-card");
@@ -1046,7 +1112,7 @@ function renderDecks() {
     elements.drawnCard.title = `待处理：${state.drawnCard.name}，${state.drawnCard.type === "百变怪" ? "数值待结算" : `${state.drawnCard.value}分`}`;
   } else {
     elements.drawnCard.classList.remove("has-card");
-    elements.drawnCard.innerHTML = '<span>等待抽牌</span>';
+    elements.drawnCard.innerHTML = '<span>等待中</span>';
     elements.drawnCard.removeAttribute("title");
   }
   const canReject = state.drawnCard && state.drawnSource === "draw" && state.phase === "resolve" && state.drawnCard.type === "普通";
